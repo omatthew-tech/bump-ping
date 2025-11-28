@@ -7,9 +7,6 @@ type VisitRow = {
   place_id: string;
   start_time: string;
   end_time: string;
-  profiles: {
-    gender: 'woman' | 'man';
-  } | null;
 };
 
 type BumpCandidate = {
@@ -50,7 +47,7 @@ serve(async () => {
 
   const { data: visits, error } = await supabase
     .from('visits')
-    .select('id,user_id,place_id,start_time,end_time,profiles!inner(gender)')
+    .select('id,user_id,place_id,start_time,end_time')
     .gte('start_time', lookbackSince);
 
   if (error) {
@@ -58,11 +55,25 @@ serve(async () => {
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 
+  const userIds = Array.from(new Set((visits ?? []).map((visit) => visit.user_id)));
+  const { data: profileRows, error: profilesError } = await supabase
+    .from('profiles')
+    .select('user_id,gender')
+    .in('user_id', userIds);
+
+  if (profilesError) {
+    console.error('Failed to fetch profiles', profilesError);
+    return new Response(JSON.stringify({ error: profilesError.message }), { status: 500 });
+  }
+
+  const genderMap = new Map((profileRows ?? []).map((profile) => [profile.user_id, profile.gender]));
+
   const placeMap = new Map<string, { women: VisitRow[]; men: VisitRow[] }>();
   (visits ?? []).forEach((visit) => {
-    if (!visit.profiles?.gender) return;
+    const gender = genderMap.get(visit.user_id);
+    if (!gender) return;
     const entry = placeMap.get(visit.place_id) ?? { women: [], men: [] };
-    if (visit.profiles.gender === 'woman') {
+    if (gender === 'woman') {
       entry.women.push(visit);
     } else {
       entry.men.push(visit);
