@@ -1,0 +1,179 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.46.1';
+import { serve } from 'https://deno.land/std@0.214.0/http/server.ts';
+
+type VisitRow = {
+  id: string;
+  user_id: string;
+  place_id: string;
+  start_time: string;
+  end_time: string;
+  profiles: {
+    gender: 'woman' | 'man';
+  } | null;
+};
+
+type BumpCandidate = {
+  womanId: string;
+  manId: string;
+  placeId: string;
+  overlapMinutes: number;
+  bumpedAt: string;
+  repeatGain: number;
+};
+
+const LOOKBACK_HOURS = 36;
+const MIN_OVERLAP_MINUTES = 10;
+const VISIBILITY_DELAY_MS = 24 * 60 * 60 * 1000;
+
+const getOverlapMinutes = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => {
+  const start = Math.max(aStart.getTime(), bStart.getTime());
+  const end = Math.min(aEnd.getTime(), bEnd.getTime());
+  const durationMs = end - start;
+  if (durationMs <= 0) return 0;
+  return Math.floor(durationMs / (60 * 1000));
+};
+
+const midpoint = (start: Date, end: Date) => new Date((start.getTime() + end.getTime()) / 2);
+
+serve(async () => {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !serviceRole) {
+    return new Response(
+      JSON.stringify({ error: 'Missing Supabase credentials' }),
+      { status: 500 },
+    );
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRole);
+  const lookbackSince = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
+
+  const { data: visits, error } = await supabase
+    .from('visits')
+    .select('id,user_id,place_id,start_time,end_time,profiles!inner(gender)')
+    .gte('start_time', lookbackSince);
+
+  if (error) {
+    console.error('Failed to fetch visits', error);
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
+
+  const placeMap = new Map<string, { women: VisitRow[]; men: VisitRow[] }>();
+  (visits ?? []).forEach((visit) => {
+    if (!visit.profiles?.gender) return;
+    const entry = placeMap.get(visit.place_id) ?? { women: [], men: [] };
+    if (visit.profiles.gender === 'woman') {
+      entry.women.push(visit);
+    } else {
+      entry.men.push(visit);
+    }
+    placeMap.set(visit.place_id, entry);
+  });
+
+  const candidates = new Map<string, BumpCandidate>();
+
+  for (const [placeId, grouped] of placeMap.entries()) {
+    grouped.women.forEach((womanVisit) => {
+      grouped.men.forEach((manVisit) => {
+        const overlapMinutes = getOverlapMinutes(
+          new Date(womanVisit.start_time),
+          new Date(womanVisit.end_time),
+          new Date(manVisit.start_time),
+          new Date(manVisit.end_time),
+        );
+
+        if (overlapMinutes < MIN_OVERLAP_MINUTES) return;
+
+        const bumpTime = midpoint(
+          new Date(womanVisit.start_time),
+          new Date(manVisit.end_time),
+        ).toISOString();
+
+        const key = `${womanVisit.user_id}:${manVisit.user_id}`;
+        const current = candidates.get(key);
+        if (current) {
+          if (new Date(bumpTime).getTime() > new Date(current.bumpedAt).getTime()) {
+            candidates.set(key, {
+              ...current,
+              placeId,
+              overlapMinutes,
+              bumpedAt: bumpTime,
+              repeatGain: current.repeatGain + 1,
+            });
+          } else {
+            candidates.set(key, {
+              ...current,
+              repeatGain: current.repeatGain + 1,
+            });
+          }
+        } else {
+          candidates.set(key, {
+            womanId: womanVisit.user_id,
+            manId: manVisit.user_id,
+            placeId,
+            overlapMinutes,
+            bumpedAt: bumpTime,
+            repeatGain: 1,
+          });
+        }
+      });
+    });
+  }
+
+  const results = [];
+
+  for (const candidate of candidates.values()) {
+    const { data: existing } = await supabase
+      .from('bumps')
+      .select('id,repeat_count,bumped_at')
+      .eq('woman_id', candidate.womanId)
+      .eq('man_id', candidate.manId)
+      .maybeSingle();
+
+    const candidateTime = new Date(candidate.bumpedAt).getTime();
+    const visibility = new Date(candidateTime + VISIBILITY_DELAY_MS).toISOString();
+
+    if (existing && candidateTime <= new Date(existing.bumped_at).getTime()) {
+      continue;
+    }
+
+    if (existing) {
+      const { error: updateError } = await supabase
+        .from('bumps')
+        .update({
+          place_id: candidate.placeId,
+          overlap_minutes: candidate.overlapMinutes,
+          repeat_count: (existing.repeat_count ?? 1) + candidate.repeatGain,
+          bumped_at: candidate.bumpedAt,
+          visible_to_woman_at: visibility,
+        })
+        .eq('id', existing.id);
+
+      if (updateError) {
+        console.error('Failed to update bump', updateError);
+        continue;
+      }
+      results.push({ type: 'updated', womanId: candidate.womanId, manId: candidate.manId });
+    } else {
+      const { error: insertError } = await supabase.from('bumps').insert({
+        woman_id: candidate.womanId,
+        man_id: candidate.manId,
+        place_id: candidate.placeId,
+        overlap_minutes: candidate.overlapMinutes,
+        repeat_count: candidate.repeatGain,
+        bumped_at: candidate.bumpedAt,
+        visible_to_woman_at: visibility,
+      });
+      if (insertError) {
+        console.error('Failed to insert bump', insertError);
+        continue;
+      }
+      results.push({ type: 'inserted', womanId: candidate.womanId, manId: candidate.manId });
+    }
+  }
+
+  return new Response(JSON.stringify({ processed: results.length, details: results }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+});
+

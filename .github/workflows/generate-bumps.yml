@@ -1,0 +1,30 @@
+name: generate-bumps hourly
+
+on:
+  schedule:
+    - cron: '0 * * * *' # every hour at minute 0 UTC
+  workflow_dispatch:
+
+jobs:
+  call-generate-bumps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST to generate-bumps Edge Function
+        env:
+          EDGE_URL: https://kycmcmmpzxsjllyiqkhy.supabase.co/functions/v1/generate-bumps
+          AUTH_HEADER: ${{ secrets.SUPABASE_EDGE_KEY }}
+        run: |
+          echo "Calling generate-bumps at $(date -u)"
+          http_status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" \
+            -X POST "$EDGE_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: $AUTH_HEADER" \
+            -d '{}')
+          echo "HTTP status: $http_status"
+          echo "Response body:"
+          cat /tmp/resp.txt
+          if [[ "$http_status" -ge 400 ]]; then
+            echo "Request failed with status $http_status"
+            exit 1
+          fi
+
