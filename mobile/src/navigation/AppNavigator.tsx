@@ -3,7 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BottomTabsNavigator from './BottomTabsNavigator';
 import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
 import { RootStackParamList } from './types';
-import PhoneAuthScreen from '../screens/Auth/PhoneAuthScreen';
+import EmailAuthScreen from '../screens/Auth/EmailAuthScreen';
 import { useAuthContext } from '../providers/AuthProvider';
 import { colors } from '../theme';
 import VisitTrackingManager from '../location/VisitTrackingManager';
@@ -24,7 +24,7 @@ const AppNavigator = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!session ? (
-        <Stack.Screen name="Auth" component={PhoneAuthScreen} />
+        <Stack.Screen name="Auth" component={EmailAuthScreen} />
       ) : !profile ? (
         <Stack.Screen name="Onboarding">
           {(props) => (

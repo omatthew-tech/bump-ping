@@ -14,57 +14,29 @@ import PrimaryButton from '../../components/common/PrimaryButton';
 import { colors, spacing, typography } from '../../theme';
 import { supabase } from '../../lib/supabaseClient';
 
-const MAX_US_DIGITS = 11; // allows leading 1
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const isValidEmail = (value: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
-const PhoneAuthScreen = () => {
-  const [rawDigits, setRawDigits] = useState('');
+const EmailAuthScreen = () => {
+  const [email, setEmail] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const formattedPhone = useMemo(() => {
-    if (!rawDigits) return '';
-    const digits = rawDigits.padEnd(10, ' ');
-    const area = rawDigits.slice(0, 3);
-    const prefix = rawDigits.slice(3, 6);
-    const line = rawDigits.slice(6, 10);
-    let formatted = '';
-    if (area) formatted = `(${area}`;
-    if (area.length === 3) formatted += ') ';
-    if (prefix) formatted += prefix;
-    if (prefix.length === 3) formatted += '-';
-    if (line) formatted += line;
-    if (rawDigits.length > 10) {
-      formatted = `+${rawDigits[0]} ${formatted}`.trim();
-    }
-    return formatted.trim();
-  }, [rawDigits]);
-
-  const e164Phone = useMemo(() => {
-    if (!rawDigits) return '';
-    if (rawDigits.length === 10) return `+1${rawDigits}`;
-    if (rawDigits.length === 11 && rawDigits.startsWith('1')) {
-      return `+${rawDigits}`;
-    }
-    return '';
-  }, [rawDigits]);
-
-  const handlePhoneChange = (text: string) => {
-    const digits = text.replace(/\D/g, '').slice(0, MAX_US_DIGITS);
-    setRawDigits(digits);
-  };
+  const normalizedEmail = useMemo(() => normalizeEmail(email), [email]);
 
   const sendOtp = async () => {
     setError(null);
-    if (!e164Phone) {
-      setError('Enter a valid US phone number.');
+    if (!isValidEmail(email)) {
+      setError('Enter a valid email address.');
       return;
     }
     setIsSubmitting(true);
     try {
       const { error: signInError } = await supabase.auth.signInWithOtp({
-        phone: e164Phone,
+        email: normalizedEmail,
         options: {
           shouldCreateUser: true,
         },
@@ -90,15 +62,15 @@ const PhoneAuthScreen = () => {
     setIsSubmitting(true);
     try {
       const { error: verifyError } = await supabase.auth.verifyOtp({
-        phone: e164Phone,
+        email: normalizedEmail,
         token: otp,
-        type: 'sms',
+        type: 'email',
       });
       if (verifyError) {
         setError(verifyError.message);
         return;
       }
-      Alert.alert('Welcome', 'Phone verified!');
+      Alert.alert('Welcome', 'Email verified!');
     } catch (err) {
       setError('Could not verify code.');
     } finally {
@@ -120,18 +92,20 @@ const PhoneAuthScreen = () => {
         <View style={styles.container}>
           <Text style={styles.title}>Sign in to Bump Ping</Text>
           <Text style={styles.subtitle}>
-            Phone verification keeps the community real and safe.
+            Use your email to receive a one-time verification code.
           </Text>
 
           {!otpSent ? (
             <View style={styles.card}>
-              <Text style={styles.label}>Phone number</Text>
+              <Text style={styles.label}>Email address</Text>
               <TextInput
                 style={styles.input}
-                placeholder="+1 415 222 3333"
-                keyboardType="phone-pad"
-                value={formattedPhone}
-                onChangeText={handlePhoneChange}
+                placeholder="you@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={email}
+                onChangeText={setEmail}
               />
               <PrimaryButton
                 label="Send code"
@@ -155,7 +129,7 @@ const PhoneAuthScreen = () => {
                 disabled={isSubmitting}
               />
               <TouchableOpacity onPress={reset} style={styles.link}>
-                <Text style={styles.linkText}>Wrong number? Start over.</Text>
+                <Text style={styles.linkText}>Wrong email? Start over.</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -230,5 +204,5 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PhoneAuthScreen;
+export default EmailAuthScreen;
 
