@@ -14,33 +14,57 @@ import PrimaryButton from '../../components/common/PrimaryButton';
 import { colors, spacing, typography } from '../../theme';
 import { supabase } from '../../lib/supabaseClient';
 
-const formatPhone = (value: string) => {
-  const trimmed = value.replace(/[^\d+]/g, '');
-  if (!trimmed.startsWith('+')) {
-    return `+1${trimmed}`;
-  }
-  return trimmed;
-};
+const MAX_US_DIGITS = 11; // allows leading 1
 
 const PhoneAuthScreen = () => {
-  const [phone, setPhone] = useState('');
+  const [rawDigits, setRawDigits] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const formattedPhone = useMemo(() => formatPhone(phone), [phone]);
+  const formattedPhone = useMemo(() => {
+    if (!rawDigits) return '';
+    const digits = rawDigits.padEnd(10, ' ');
+    const area = rawDigits.slice(0, 3);
+    const prefix = rawDigits.slice(3, 6);
+    const line = rawDigits.slice(6, 10);
+    let formatted = '';
+    if (area) formatted = `(${area}`;
+    if (area.length === 3) formatted += ') ';
+    if (prefix) formatted += prefix;
+    if (prefix.length === 3) formatted += '-';
+    if (line) formatted += line;
+    if (rawDigits.length > 10) {
+      formatted = `+${rawDigits[0]} ${formatted}`.trim();
+    }
+    return formatted.trim();
+  }, [rawDigits]);
+
+  const e164Phone = useMemo(() => {
+    if (!rawDigits) return '';
+    if (rawDigits.length === 10) return `+1${rawDigits}`;
+    if (rawDigits.length === 11 && rawDigits.startsWith('1')) {
+      return `+${rawDigits}`;
+    }
+    return '';
+  }, [rawDigits]);
+
+  const handlePhoneChange = (text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, MAX_US_DIGITS);
+    setRawDigits(digits);
+  };
 
   const sendOtp = async () => {
     setError(null);
-    if (formattedPhone.length < 10) {
-      setError('Enter a valid phone number with country code.');
+    if (!e164Phone) {
+      setError('Enter a valid US phone number.');
       return;
     }
     setIsSubmitting(true);
     try {
       const { error: signInError } = await supabase.auth.signInWithOtp({
-        phone: formattedPhone,
+        phone: e164Phone,
         options: {
           shouldCreateUser: true,
         },
@@ -66,7 +90,7 @@ const PhoneAuthScreen = () => {
     setIsSubmitting(true);
     try {
       const { error: verifyError } = await supabase.auth.verifyOtp({
-        phone: formattedPhone,
+        phone: e164Phone,
         token: otp,
         type: 'sms',
       });
@@ -106,8 +130,8 @@ const PhoneAuthScreen = () => {
                 style={styles.input}
                 placeholder="+1 415 222 3333"
                 keyboardType="phone-pad"
-                value={phone}
-                onChangeText={setPhone}
+                value={formattedPhone}
+                onChangeText={handlePhoneChange}
               />
               <PrimaryButton
                 label="Send code"
