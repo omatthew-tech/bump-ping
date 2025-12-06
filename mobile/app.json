@@ -16,8 +16,10 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We use your location to detect when you cross paths at approved public places.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need background location to detect bumps even when the app is closed.",
-        "NSLocationAlwaysUsageDescription": "Background location lets us notify you about bumps."
-      }
+        "NSLocationAlwaysUsageDescription": "Background location lets us notify you about bumps.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.matthewoz101.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +30,12 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "web": {
@@ -44,6 +51,11 @@
           "iosWhenInUsePermission": "We use your location to find nearby public places so bumps feel contextual."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d19b8d0f-c94d-4632-8fae-42ae3677ac4e"
+      }
+    }
   }
 }

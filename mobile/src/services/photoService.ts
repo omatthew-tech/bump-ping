@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { supabase } from '../lib/supabaseClient';
 
 const BUCKET = 'profile-photos';
@@ -7,22 +8,38 @@ const getFileExtension = (uri: string) => {
   return match ? match[1] : 'jpg';
 };
 
+const getMimeType = (extension: string) => {
+  switch (extension.toLowerCase()) {
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'heic':
+      return 'image/heic';
+    case 'heif':
+      return 'image/heif';
+    default:
+      return 'image/jpeg';
+  }
+};
+
 export const uploadProfilePhoto = async (
   fileUri: string,
   userId: string,
   position: number,
 ) => {
-  const response = await fetch(fileUri);
-  const blob = await response.blob();
-
   const extension = getFileExtension(fileUri);
   const path = `${userId}/${Date.now()}-${position}.${extension}`;
+  const file = new File(fileUri);
+  const fileBuffer = await file.arrayBuffer();
+  const contentType = getMimeType(extension);
+
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(path, blob, {
+    .upload(path, fileBuffer, {
       cacheControl: '3600',
       upsert: true,
-      contentType: blob.type || 'image/jpeg',
+      contentType,
     });
 
   if (uploadError) {

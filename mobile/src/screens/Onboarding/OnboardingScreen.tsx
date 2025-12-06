@@ -66,7 +66,7 @@ const OnboardingScreen = ({ onComplete }: Props) => {
         throw new Error('Not authenticated');
       }
 
-      const { error } = await supabase.from('profiles').upsert({
+      const { error: profileError } = await supabase.from('profiles').upsert({
         user_id: session.user.id,
         first_name: payload.firstName.trim(),
         gender: payload.gender,
@@ -74,20 +74,27 @@ const OnboardingScreen = ({ onComplete }: Props) => {
         bio: payload.bio,
         interests: payload.interests,
       });
-      if (error) {
-        throw error;
+      if (profileError) {
+        console.error('profiles upsert failed', profileError);
+        throw profileError;
       }
 
-      await replaceUserPhotos(
-        session.user.id,
-        payload.photos.map((photo) => photo.uri),
-      );
+      try {
+        await replaceUserPhotos(
+          session.user.id,
+          payload.photos.map((photo) => photo.uri),
+        );
+      } catch (photoError) {
+        console.error('photo upload failed', photoError);
+        throw photoError;
+      }
     },
     onSuccess: async () => {
       await refreshProfile();
       onComplete();
     },
-    onError: () => {
+    onError: (err) => {
+      console.error('onboarding mutation error', err);
       Alert.alert('Oops', 'We could not save your profile. Please try again.');
     },
   });
@@ -150,7 +157,7 @@ const OnboardingScreen = ({ onComplete }: Props) => {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.8,
     });
 
