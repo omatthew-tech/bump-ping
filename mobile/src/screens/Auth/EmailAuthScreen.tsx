@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  Linking,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -15,6 +16,7 @@ import PrimaryButton from '../../components/common/PrimaryButton';
 import LadybugCrawler from '../../components/common/LadybugCrawler';
 import { colors, spacing, typography } from '../../theme';
 import { supabase } from '../../lib/supabaseClient';
+import { env } from '../../config/env';
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const isValidEmail = (value: string) =>
@@ -86,6 +88,15 @@ const EmailAuthScreen = () => {
     setOtpSent(false);
   };
 
+  const openLink = async (url: string) => {
+    if (!url) return;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Unable to open link', 'Please try again later.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
@@ -152,7 +163,15 @@ const EmailAuthScreen = () => {
 
           {error && <Text style={styles.error}>{error}</Text>}
           <Text style={styles.terms}>
-            By continuing you agree to our Terms & Privacy.
+            By continuing you agree to our{' '}
+            <Text style={styles.linkInline} onPress={() => openLink(env.termsUrl)}>
+              Terms
+            </Text>{' '}
+            &{' '}
+            <Text style={styles.linkInline} onPress={() => openLink(env.privacyUrl)}>
+              Privacy
+            </Text>
+            .
           </Text>
         </View>
         </KeyboardAvoidingView>
@@ -247,6 +266,11 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     color: colors.mutedText,
     textAlign: 'center',
+    lineHeight: 18,
+  },
+  linkInline: {
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
 

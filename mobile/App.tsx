@@ -9,8 +9,11 @@ import { useMemo } from 'react';
 import { colors } from './src/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/providers/AuthProvider';
+import { configureNotificationHandling } from './src/services/pushService';
 
 const queryClient = new QueryClient();
+
+configureNotificationHandling();
 
 export default function App() {
   const navTheme = useMemo(() => {

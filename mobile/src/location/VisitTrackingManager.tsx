@@ -3,10 +3,11 @@ import { useVisitTracking } from './useVisitTracking';
 
 type Props = {
   children: ReactNode;
+  enabled?: boolean;
 };
 
-const VisitTrackingManager = ({ children }: Props) => {
-  const status = useVisitTracking();
+const VisitTrackingManager = ({ children, enabled = true }: Props) => {
+  const status = useVisitTracking(enabled);
 
   useEffect(() => {
     if (status === 'denied') {

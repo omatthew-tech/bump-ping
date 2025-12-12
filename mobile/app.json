@@ -22,6 +22,7 @@
       "bundleIdentifier": "com.matthewoz101.mobile"
     },
     "android": {
+      "package": "com.matthewoz101.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

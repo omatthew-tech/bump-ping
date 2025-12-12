@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { colors, spacing, typography } from '../../theme';
 import { useAuthContext } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabaseClient';
+import { fetchBlockedUserIds, blockUser, reportUser } from '../../services/safetyService';
 
 type WomanBumpCard = {
   id: string;
@@ -34,7 +35,7 @@ const formatRelativeLabel = (timestamp: string) => {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-const fetchWomanBumps = async (userId: string): Promise<WomanBumpCard[]> => {
+const fetchWomanBumps = async (userId: string, blockedIds: string[]): Promise<WomanBumpCard[]> => {
   const now = new Date().toISOString();
   const { data: bumps, error } = await supabase
     .from('bumps')
@@ -55,7 +56,7 @@ const fetchWomanBumps = async (userId: string): Promise<WomanBumpCard[]> => {
     .eq('from_user_id', userId);
 
   const dismissed = new Set((likes ?? []).map((l) => l.to_user_id));
-  const filtered = bumps.filter((b) => !dismissed.has(b.man_id));
+  const filtered = bumps.filter((b) => !dismissed.has(b.man_id) && !blockedIds.includes(b.man_id));
   if (!filtered.length) return [];
 
   const { data: profiles, error: profileError } = await supabase
@@ -90,7 +91,7 @@ const fetchWomanBumps = async (userId: string): Promise<WomanBumpCard[]> => {
   }));
 };
 
-const fetchIncomingLikes = async (userId: string): Promise<IncomingLikeCard[]> => {
+const fetchIncomingLikes = async (userId: string, blockedIds: string[]): Promise<IncomingLikeCard[]> => {
   const { data: likes, error } = await supabase
     .from('likes')
     .select('id,from_user_id,bump_id,created_at')
@@ -122,24 +123,30 @@ const fetchIncomingLikes = async (userId: string): Promise<IncomingLikeCard[]> =
     }
   });
 
-  return likes.map((like) => ({
-    likeId: like.id,
-    womanId: like.from_user_id,
-    bumpId: like.bump_id ?? '',
-    name: profileMap.get(like.from_user_id)?.first_name ?? 'Someone',
-    place: (bumpMap.get(like.bump_id ?? '')?.place as { name?: string } | null)?.name ?? 'a nearby spot',
-    createdAtLabel: formatRelativeLabel(like.created_at),
-    photo: photoMap.get(like.from_user_id),
-  }));
+  return likes
+    .filter((like) => !blockedIds.includes(like.from_user_id))
+    .map((like) => ({
+      likeId: like.id,
+      womanId: like.from_user_id,
+      bumpId: like.bump_id ?? '',
+      name: profileMap.get(like.from_user_id)?.first_name ?? 'Someone',
+      place: (bumpMap.get(like.bump_id ?? '')?.place as { name?: string } | null)?.name ?? 'a nearby spot',
+      createdAtLabel: formatRelativeLabel(like.created_at),
+      photo: photoMap.get(like.from_user_id),
+    }));
 };
 
 const WomanBumpCard = ({
   bump,
   onDecision,
+  onBlock,
+  onReport,
   isProcessing,
 }: {
   bump: WomanBumpCard;
   onDecision: (action: 'no' | 'yes') => void;
+  onBlock: () => void;
+  onReport: () => void;
   isProcessing: boolean;
 }) => (
   <View style={styles.card}>
@@ -177,6 +184,14 @@ const WomanBumpCard = ({
           <Text style={styles.buttonText}>{isProcessing ? 'Sending…' : 'Send Ping'}</Text>
         </TouchableOpacity>
       </View>
+      <View style={styles.safetyRow}>
+        <TouchableOpacity onPress={onReport}>
+          <Text style={styles.safetyText}>Report</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onBlock}>
+          <Text style={styles.safetyText}>Block</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   </View>
 );
@@ -184,10 +199,14 @@ const WomanBumpCard = ({
 const IncomingLikeCardComponent = ({
   like,
   onRespond,
+  onBlock,
+  onReport,
   isProcessing,
 }: {
   like: IncomingLikeCard;
   onRespond: (action: 'no' | 'match') => void;
+  onBlock: () => void;
+  onReport: () => void;
   isProcessing: boolean;
 }) => (
   <View style={styles.card}>
@@ -219,6 +238,14 @@ const IncomingLikeCardComponent = ({
           <Text style={styles.buttonText}>{isProcessing ? 'Matching…' : 'Match'}</Text>
         </TouchableOpacity>
       </View>
+      <View style={styles.safetyRow}>
+        <TouchableOpacity onPress={onReport}>
+          <Text style={styles.safetyText}>Report</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onBlock}>
+          <Text style={styles.safetyText}>Block</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   </View>
 );
@@ -229,15 +256,21 @@ const BumpsScreen = () => {
   const isWoman = profile?.gender === 'woman';
   const queryClient = useQueryClient();
 
+  const blocksQuery = useQuery({
+    queryKey: ['blocks', userId],
+    queryFn: () => fetchBlockedUserIds(userId ?? ''),
+    enabled: !!userId,
+  });
+
   const bumpsQuery = useQuery({
     queryKey: ['bumps', userId],
-    queryFn: () => fetchWomanBumps(userId ?? ''),
+    queryFn: () => fetchWomanBumps(userId ?? '', blocksQuery.data ?? []),
     enabled: !!userId && isWoman,
   });
 
   const likesQuery = useQuery({
     queryKey: ['incomingLikes', userId],
-    queryFn: () => fetchIncomingLikes(userId ?? ''),
+    queryFn: () => fetchIncomingLikes(userId ?? '', blocksQuery.data ?? []),
     enabled: !!userId && profile?.gender === 'man',
   });
 
@@ -291,6 +324,39 @@ const BumpsScreen = () => {
     },
   });
 
+  const blockMutation = useMutation({
+    mutationFn: async (targetUserId: string) => {
+      if (!userId) throw new Error('Missing user');
+      await blockUser(userId, targetUserId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['blocks', userId] });
+      queryClient.invalidateQueries({ queryKey: ['bumps', userId] });
+      queryClient.invalidateQueries({ queryKey: ['incomingLikes', userId] });
+    },
+    onError: (err) => Alert.alert('Error', err.message),
+  });
+
+  const reportMutation = useMutation({
+    mutationFn: async ({ targetUserId, reason }: { targetUserId: string; reason: string }) => {
+      if (!userId) throw new Error('Missing user');
+      await reportUser(userId, targetUserId, reason);
+    },
+    onError: (err) => Alert.alert('Error', err.message),
+  });
+
+  const handleReport = (targetUserId: string) => {
+    const reasons = ['Harassment', 'Fake profile', 'Spam', 'Other'];
+    Alert.alert(
+      'Report user',
+      'Select a reason',
+      reasons.map((reason) => ({
+        text: reason,
+        onPress: () => reportMutation.mutate({ targetUserId, reason }),
+      })),
+    );
+  };
+
   const renderWomanFeed = () => {
     if (bumpsQuery.isLoading) {
       return (
@@ -317,6 +383,8 @@ const BumpsScreen = () => {
             bump={item}
             isProcessing={womanDecisionMutation.isPending}
             onDecision={(decision) => womanDecisionMutation.mutate({ manId: item.manId, decision, bumpId: item.id })}
+            onBlock={() => blockMutation.mutate(item.manId)}
+            onReport={() => handleReport(item.manId)}
           />
         )}
       />
@@ -356,6 +424,8 @@ const BumpsScreen = () => {
                 action,
               })
             }
+            onBlock={() => blockMutation.mutate(item.womanId)}
+            onReport={() => handleReport(item.womanId)}
           />
         )}
       />
@@ -467,6 +537,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
+  },
+  safetyRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.md,
+  },
+  safetyText: {
+    color: colors.mutedText,
+    fontSize: typography.caption,
+    fontWeight: '600',
   },
   emptyTitle: {
     fontSize: typography.subheading,

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
+import { registerPushToken } from '../services/pushService';
 
 type Profile = {
   user_id: string;
@@ -47,6 +48,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const { data: refresh } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'TOKEN_REFRESHED') {
+        setSession(newSession);
+      }
+    });
+    supabase.auth.startAutoRefresh();
+    return () => {
+      refresh.subscription.unsubscribe();
+      supabase.auth.stopAutoRefresh();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    registerPushToken(session.user.id);
+  }, [session?.user?.id]);
 
   const refreshProfile = async () => {
     if (!session?.user) {

@@ -1,9 +1,12 @@
-import { FlatList, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { FlatList, StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { colors, spacing, typography } from '../../theme';
 import { useAuthContext } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabaseClient';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
 
 type MatchRow = {
   id: string;
@@ -55,8 +58,8 @@ const fetchMatches = async (userId: string): Promise<MatchRow[]> => {
   }));
 };
 
-const ChatRow = ({ name, place, createdAtLabel }: MatchRow) => (
-  <View style={styles.row}>
+const ChatRow = ({ name, place, createdAtLabel, onPress }: MatchRow & { onPress: () => void }) => (
+  <TouchableOpacity style={styles.row} onPress={onPress}>
     <View style={styles.avatar}>
       <Text style={styles.avatarText}>{name[0]}</Text>
     </View>
@@ -65,12 +68,13 @@ const ChatRow = ({ name, place, createdAtLabel }: MatchRow) => (
       <Text style={styles.preview}>Met near {place}</Text>
     </View>
     <Text style={styles.timestamp}>{createdAtLabel}</Text>
-  </View>
+  </TouchableOpacity>
 );
 
 const ChatsScreen = () => {
   const { session } = useAuthContext();
   const userId = session?.user.id;
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const matchesQuery = useQuery({
     queryKey: ['matches', userId],
@@ -89,7 +93,12 @@ const ChatsScreen = () => {
         <FlatList
           data={matchesQuery.data}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <ChatRow {...item} />}
+          renderItem={({ item }) => (
+            <ChatRow
+              {...item}
+              onPress={() => navigation.navigate('ChatThread', { matchId: item.id, name: item.name })}
+            />
+          )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           contentContainerStyle={styles.list}
         />

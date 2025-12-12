@@ -41,10 +41,18 @@ const ensurePermissions = async () => {
   return bg.granted;
 };
 
-export const useVisitTracking = () => {
+export const useVisitTracking = (enabled = true) => {
   const [status, setStatus] = useState<'idle' | 'tracking' | 'denied'>('idle');
 
   const registerGeofences = useCallback(async () => {
+    if (!enabled) {
+      const running = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK);
+      if (running) {
+        await Location.stopGeofencingAsync(GEOFENCE_TASK);
+      }
+      setStatus('idle');
+      return;
+    }
     const permitted = await ensurePermissions();
     if (!permitted) {
       setStatus('denied');
@@ -81,7 +89,7 @@ export const useVisitTracking = () => {
 
     await Location.startGeofencingAsync(GEOFENCE_TASK, nearest);
     setStatus('tracking');
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     registerGeofences();

@@ -7,11 +7,15 @@ import EmailAuthScreen from '../screens/Auth/EmailAuthScreen';
 import { useAuthContext } from '../providers/AuthProvider';
 import { colors } from '../theme';
 import VisitTrackingManager from '../location/VisitTrackingManager';
+import { useUserStatus } from '../hooks/useUserStatus';
+import ChatThreadScreen from '../screens/Chats/ChatThreadScreen';
+import EditProfileScreen from '../screens/Profile/EditProfileScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
   const { session, profile, isLoading, refreshProfile } = useAuthContext();
+  const { isPaused } = useUserStatus(session?.user.id);
 
   if (isLoading) {
     return (
@@ -37,12 +41,14 @@ const AppNavigator = () => {
       ) : (
         <Stack.Screen name="MainTabs">
           {() => (
-            <VisitTrackingManager>
+            <VisitTrackingManager enabled={!isPaused}>
               <BottomTabsNavigator />
             </VisitTrackingManager>
           )}
         </Stack.Screen>
       )}
+      <Stack.Screen name="ChatThread" component={ChatThreadScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 };

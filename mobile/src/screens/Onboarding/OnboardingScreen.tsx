@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ import PrimaryButton from '../../components/common/PrimaryButton';
 import { colors, spacing, typography } from '../../theme';
 import { INTEREST_OPTIONS } from '../../constants/interests';
 import { supabase } from '../../lib/supabaseClient';
+import { env } from '../../config/env';
 import { useMutation } from '@tanstack/react-query';
 import { useAuthContext } from '../../providers/AuthProvider';
 import { replaceUserPhotos } from '../../services/photoService';
@@ -310,6 +312,17 @@ const OnboardingScreen = ({ onComplete }: Props) => {
               onPress={requestLocation}
               disabled={form.locationGranted}
             />
+            <Text style={styles.termsText}>
+              By continuing you agree to our{' '}
+              <Text style={styles.link} onPress={() => Linking.openURL(env.termsUrl)}>
+                Terms
+              </Text>{' '}
+              &{' '}
+              <Text style={styles.link} onPress={() => Linking.openURL(env.privacyUrl)}>
+                Privacy Policy
+              </Text>
+              .
+            </Text>
           </View>
         );
       default:
@@ -515,6 +528,16 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
     backgroundColor: colors.surface,
+  },
+  termsText: {
+    fontSize: typography.caption,
+    color: colors.mutedText,
+    marginTop: spacing.sm,
+    lineHeight: 18,
+  },
+  link: {
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
 
