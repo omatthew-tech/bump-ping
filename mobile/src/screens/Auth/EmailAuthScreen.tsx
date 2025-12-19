@@ -29,6 +29,7 @@ const EmailAuthScreen = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [bugArea, setBugArea] = useState({ width: 0, height: 0 });
 
   const normalizedEmail = useMemo(() => normalizeEmail(email), [email]);
 
@@ -99,50 +100,59 @@ const EmailAuthScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.root}>
-        <View pointerEvents="none" style={styles.ladybugLayer}>
-          {windowWidth > 0 && windowHeight > 0 && (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
+        <View
+          pointerEvents="none"
+          style={styles.ladybugLayer}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            setBugArea((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+          }}
+        >
+          {(bugArea.width || windowWidth) > 0 && (bugArea.height || windowHeight) > 0 && (
             <>
-              <LadybugCrawler variant="red" areaWidth={windowWidth} areaHeight={windowHeight} size={78} />
-              <LadybugCrawler variant="green" areaWidth={windowWidth} areaHeight={windowHeight} size={70} />
+              <LadybugCrawler
+                variant="red"
+                areaWidth={bugArea.width || windowWidth}
+                areaHeight={bugArea.height || windowHeight}
+                size={78}
+              />
+              <LadybugCrawler
+                variant="green"
+                areaWidth={bugArea.width || windowWidth}
+                areaHeight={bugArea.height || windowHeight}
+                size={70}
+              />
             </>
           )}
         </View>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.keyboard}
-        >
-          <View style={styles.container}>
-            <View style={styles.hero}>
-            <View style={styles.heroContent}>
-              <Text style={styles.title}>Sign in to Bump Ping</Text>
-              <Text style={styles.subtitle}>
-                Use your email to receive a one-time verification code.
-              </Text>
-            </View>
-            </View>
 
+        <View style={styles.brandArea}>
+          <View style={styles.wordmark}>
+            <Text style={styles.wordmarkBump}>bump</Text>
+            <Text style={styles.wordmarkPing}>Ping</Text>
+          </View>
+        </View>
+
+        <View style={styles.bottomArea}>
           {!otpSent ? (
             <View style={styles.card}>
-              <Text style={styles.label}>Email address</Text>
+              <Text style={styles.cardTitle}>Sign up / log in with email</Text>
               <TextInput
                 style={styles.input}
-                placeholder="you@example.com"
+                placeholder="Email address"
+                placeholderTextColor={colors.mutedText}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={email}
                 onChangeText={setEmail}
               />
-              <PrimaryButton
-                label="Send code"
-                onPress={sendOtp}
-                disabled={isSubmitting}
-              />
+              <PrimaryButton label="Send code" onPress={sendOtp} disabled={isSubmitting} />
             </View>
           ) : (
             <View style={styles.card}>
-              <Text style={styles.label}>Enter the 6-digit code</Text>
+              <Text style={styles.cardTitle}>Enter the 6-digit code</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="number-pad"
@@ -150,11 +160,7 @@ const EmailAuthScreen = () => {
                 value={otp}
                 onChangeText={setOtp}
               />
-              <PrimaryButton
-                label="Verify"
-                onPress={verifyOtp}
-                disabled={isSubmitting}
-              />
+              <PrimaryButton label="Verify" onPress={verifyOtp} disabled={isSubmitting} />
               <TouchableOpacity onPress={reset} style={styles.link}>
                 <Text style={styles.linkText}>Wrong email? Start over.</Text>
               </TouchableOpacity>
@@ -174,8 +180,7 @@ const EmailAuthScreen = () => {
             .
           </Text>
         </View>
-        </KeyboardAvoidingView>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -183,50 +188,51 @@ const EmailAuthScreen = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
   root: {
     flex: 1,
-  },
-  keyboard: {
-    flex: 1,
-    zIndex: 1,
-  },
-  container: {
-    flex: 1,
-    padding: spacing.lg,
-    gap: spacing.lg,
-  },
-  hero: {
-    backgroundColor: colors.surface,
-    borderRadius: 32,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 3,
-    overflow: 'hidden',
-    minHeight: 200,
-    justifyContent: 'center',
-  },
-  heroContent: {
-    gap: spacing.sm,
-    maxWidth: 320,
+    paddingHorizontal: spacing.lg,
   },
   ladybugLayer: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
+    // Above the wordmark so bugs can crawl over it.
+    zIndex: 2,
   },
-  title: {
-    fontSize: typography.heading,
-    fontWeight: '700',
+  brandArea: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: spacing.xl * 2,
+    // Below the ladybugs (they should crawl over the logo text).
+    zIndex: 1,
+  },
+  wordmark: {
+    alignItems: 'center',
+    // Extra breathing room to avoid ascender clipping (the top of "b") on some devices.
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  wordmarkBump: {
+    fontFamily: 'Baloo2_700Bold',
+    fontSize: 74,
+    lineHeight: 94,
     color: colors.text,
+    letterSpacing: -1.5,
   },
-  subtitle: {
-    fontSize: typography.body,
-    color: colors.mutedText,
+  wordmarkPing: {
+    fontFamily: 'Baloo2_600SemiBold',
+    fontSize: 28,
+    lineHeight: 34,
+    color: colors.text,
+    letterSpacing: 6,
+    marginTop: -22,
+  },
+  bottomArea: {
+    gap: spacing.md,
+    // Keep the form above the ladybugs for usability.
+    zIndex: 3,
+    paddingBottom: spacing.lg,
   },
   card: {
     backgroundColor: colors.surface,
@@ -238,9 +244,10 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-  label: {
+  cardTitle: {
     fontSize: typography.subheading,
     fontWeight: '600',
+    color: colors.text,
   },
   input: {
     borderRadius: 16,
@@ -255,7 +262,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   linkText: {
-    color: colors.primary,
+    color: colors.primaryDark,
     fontWeight: '600',
   },
   error: {

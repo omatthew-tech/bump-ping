@@ -10,12 +10,18 @@ import { colors } from './src/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/providers/AuthProvider';
 import { configureNotificationHandling } from './src/services/pushService';
+import { useFonts, Baloo2_600SemiBold, Baloo2_700Bold } from '@expo-google-fonts/baloo-2';
 
 const queryClient = new QueryClient();
 
 configureNotificationHandling();
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Baloo2_600SemiBold,
+    Baloo2_700Bold,
+  });
+
   const navTheme = useMemo(() => {
     const theme = DefaultTheme;
     return {
@@ -29,6 +35,10 @@ export default function App() {
       },
     };
   }, []);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -43,24 +43,6 @@ const Ladybug = ({ variant = 'red', size = 72, legPhase = 0 }: Props) => {
 
   return (
     <Svg width={size} height={size} viewBox="0 0 144 160">
-      {/* motion lines */}
-      <Path
-        d="M18 70 q14 -12 28 0"
-        stroke={strokeColor}
-        strokeWidth={6}
-        strokeLinecap="round"
-        fill="none"
-        opacity={0.15}
-      />
-      <Path
-        d="M18 96 q10 -10 24 0"
-        stroke={strokeColor}
-        strokeWidth={5}
-        strokeLinecap="round"
-        fill="none"
-        opacity={0.12}
-      />
-
       {/* legs */}
       {legs.map((leg) => (
         <Path

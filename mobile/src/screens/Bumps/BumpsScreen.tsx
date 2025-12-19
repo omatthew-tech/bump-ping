@@ -446,10 +446,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+    padding: spacing.lg,
   },
   list: {
-    padding: spacing.lg,
     gap: spacing.lg,
+    paddingBottom: spacing.lg,
   },
   title: {
     fontSize: typography.heading,
