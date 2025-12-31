@@ -57,7 +57,7 @@ export default function HomePage() {
             <div className="wordmarkPing">Ping</div>
           </div>
           <p className="tagline">
-            Turn “near misses” at real places into intentional matches — with women in control.
+            The only location based dating app - with women in control
           </p>
         </section>
 
