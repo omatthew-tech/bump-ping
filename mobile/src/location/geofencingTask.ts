@@ -1,7 +1,7 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { recordVisit } from '../services/visitService';
-import { GEOFENCE_TASK } from './constants';
+import { GEOFENCE_TASK, MIN_VISIT_MINUTES } from './constants';
 
 type ActiveVisitMap = Record<string, string>;
 
@@ -36,6 +36,13 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
       return;
     }
     const exitTime = new Date().toISOString();
+    const durationMinutes =
+      (new Date(exitTime).getTime() - new Date(enterTime).getTime()) / (1000 * 60);
+
+    // Only record "real" visits (>= 10 minutes) per MVP spec.
+    if (durationMinutes < MIN_VISIT_MINUTES) {
+      return;
+    }
     await recordVisit({
       placeId,
       enterTime,

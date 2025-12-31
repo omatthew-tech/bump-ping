@@ -7,6 +7,8 @@ import { colors, spacing, typography } from '../../theme';
 import { RootStackParamList } from '../../navigation/types';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuthContext } from '../../providers/AuthProvider';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 type MessageRow = {
   id: string;
@@ -36,6 +38,7 @@ const ChatThreadScreen = ({ route }: Props) => {
   const userId = session?.user.id;
   const [pendingText, setPendingText] = useState('');
   const [realtimeBuffer, setRealtimeBuffer] = useState<MessageRow[]>([]);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const messagesQuery = useQuery({
     queryKey: ['messages', matchId],
@@ -82,10 +85,14 @@ const ChatThreadScreen = ({ route }: Props) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
+      <TouchableOpacity
+        style={styles.header}
+        onPress={() => navigation.navigate('MatchProfile', { matchId })}
+        activeOpacity={0.8}
+      >
         <Text style={styles.title}>{name}</Text>
-        <Text style={styles.subtitle}>Met near your bump spot</Text>
-      </View>
+        <Text style={styles.subtitle}>View profile</Text>
+      </TouchableOpacity>
       {messagesQuery.isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />

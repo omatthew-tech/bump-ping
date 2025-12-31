@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
+import { MIN_VISIT_MINUTES } from '../location/constants';
 
 type VisitPayload = {
   placeId: string;
@@ -11,6 +12,12 @@ export const recordVisit = async ({
   enterTime,
   exitTime,
 }: VisitPayload) => {
+  const durationMinutes =
+    (new Date(exitTime).getTime() - new Date(enterTime).getTime()) / (1000 * 60);
+  if (durationMinutes < MIN_VISIT_MINUTES) {
+    return;
+  }
+
   const { data } = await supabase.auth.getSession();
   const userId = data.session?.user.id;
   if (!userId) {

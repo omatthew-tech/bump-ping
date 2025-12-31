@@ -20,7 +20,58 @@ type BumpCandidate = {
 
 const LOOKBACK_HOURS = 36;
 const MIN_OVERLAP_MINUTES = 10;
-const VISIBILITY_DELAY_MS = 24 * 60 * 60 * 1000;
+// Bumps are eligible for the woman to review immediately (no 24h delay).
+const VISIBILITY_DELAY_MS = 0;
+
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const EXPO_BATCH_SIZE = 100;
+
+const chunk = <T>(arr: T[], size: number) => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+};
+
+type PushTokenRow = {
+  token: string;
+};
+
+const sendExpoPush = async (tokens: string[], title: string, body: string) => {
+  if (!tokens.length) return;
+
+  const messages = tokens.map((to) => ({
+    to,
+    sound: 'default',
+    title,
+    body,
+    data: { kind: 'new_bump' },
+  }));
+
+  const batches = chunk(messages, EXPO_BATCH_SIZE);
+  for (const batch of batches) {
+    const res = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(batch),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error('Expo push failed', res.status, text);
+      continue;
+    }
+
+    const json = await res.json().catch(() => null);
+    // Expo returns per-message errors; log if present for visibility.
+    if (json?.data?.some?.((d: { status?: string }) => d?.status === 'error')) {
+      console.warn('Expo push response contained errors', JSON.stringify(json));
+    }
+  }
+};
 
 const getOverlapMinutes = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => {
   const start = Math.max(aStart.getTime(), bStart.getTime());
@@ -132,6 +183,7 @@ serve(async () => {
   }
 
   const results = [];
+  const newlyInsertedForWomen = new Set<string>();
 
   for (const candidate of candidates.values()) {
     const { data: existing } = await supabase
@@ -180,7 +232,28 @@ serve(async () => {
         continue;
       }
       results.push({ type: 'inserted', womanId: candidate.womanId, manId: candidate.manId });
+      newlyInsertedForWomen.add(candidate.womanId);
     }
+  }
+
+  // Push notification: only for brand new bumps (inserts).
+  try {
+    const womanIds = Array.from(newlyInsertedForWomen);
+    if (womanIds.length) {
+      const { data: tokenRows, error: tokenError } = await supabase
+        .from('push_tokens')
+        .select('token')
+        .in('user_id', womanIds);
+
+      if (tokenError) {
+        console.error('Failed to fetch push tokens', tokenError);
+      } else {
+        const tokens = ((tokenRows ?? []) as PushTokenRow[]).map((r) => r.token).filter(Boolean);
+        await sendExpoPush(tokens, 'Someone just bumped you', 'See who it is');
+      }
+    }
+  } catch (err) {
+    console.error('Push notification sending failed', err);
   }
 
   return new Response(JSON.stringify({ processed: results.length, details: results }), {

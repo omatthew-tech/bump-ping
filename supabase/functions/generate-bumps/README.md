@@ -29,5 +29,21 @@ supabase cron create bump-job \
   --function generate-bumps
 ```
 
-The function looks back 36 hours, requires ≥10 minutes of overlap, and increments `repeat_count` when the same pair overlaps again. Bumps become visible to the woman exactly 24 hours after `bumped_at`.
+The function looks back 36 hours, requires ≥10 minutes of overlap, and increments `repeat_count` when the same pair overlaps again. Bumps are eligible for the woman to review immediately after creation (no 24-hour delay).
+
+## Push notifications (new bump)
+
+When the function inserts a brand new bump for a woman, it will send an Expo push notification:
+
+- Title: `Someone just bumped you`
+- Body: `See who it is`
+
+### Requirements
+
+1. Client must register tokens into a `push_tokens` table (this repo already upserts to `push_tokens` via `mobile/src/services/pushService.ts`).
+2. The `push_tokens` table must contain at least:
+   - `user_id` (uuid)
+   - `token` (text)
+
+No extra credentials are required for sending via Expo push API in this simple setup.
 

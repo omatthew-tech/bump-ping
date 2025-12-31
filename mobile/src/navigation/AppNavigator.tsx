@@ -10,6 +10,7 @@ import VisitTrackingManager from '../location/VisitTrackingManager';
 import { useUserStatus } from '../hooks/useUserStatus';
 import ChatThreadScreen from '../screens/Chats/ChatThreadScreen';
 import EditProfileScreen from '../screens/Profile/EditProfileScreen';
+import MatchProfileScreen from '../screens/Chats/MatchProfileScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -48,6 +49,7 @@ const AppNavigator = () => {
         </Stack.Screen>
       )}
       <Stack.Screen name="ChatThread" component={ChatThreadScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="MatchProfile" component={MatchProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );

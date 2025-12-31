@@ -1,10 +1,12 @@
-import { View, Text, StyleSheet, FlatList, ImageBackground, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ImageBackground, TouchableOpacity, ActivityIndicator, Alert, Animated, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { colors, spacing, typography } from '../../theme';
 import { useAuthContext } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabaseClient';
 import { fetchBlockedUserIds, blockUser, reportUser } from '../../services/safetyService';
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useRef, useState } from 'react';
 
 type WomanBumpCard = {
   id: string;
@@ -21,7 +23,6 @@ type IncomingLikeCard = {
   womanId: string;
   bumpId: string;
   name: string;
-  place: string;
   createdAtLabel: string;
   photo?: string;
 };
@@ -36,12 +37,10 @@ const formatRelativeLabel = (timestamp: string) => {
 };
 
 const fetchWomanBumps = async (userId: string, blockedIds: string[]): Promise<WomanBumpCard[]> => {
-  const now = new Date().toISOString();
   const { data: bumps, error } = await supabase
     .from('bumps')
     .select('id,man_id,place:places(name),repeat_count,bumped_at')
     .eq('woman_id', userId)
-    .lte('visible_to_woman_at', now)
     .order('bumped_at', { ascending: false });
 
   if (error) {
@@ -106,16 +105,13 @@ const fetchIncomingLikes = async (userId: string, blockedIds: string[]): Promise
   if (!likes?.length) return [];
 
   const womanIds = Array.from(new Set(likes.map((l) => l.from_user_id)));
-  const bumpIds = Array.from(new Set(likes.map((l) => l.bump_id)));
 
-  const [{ data: profiles }, { data: photos }, { data: bumps }] = await Promise.all([
+  const [{ data: profiles }, { data: photos }] = await Promise.all([
     supabase.from('profiles').select('user_id,first_name').in('user_id', womanIds),
     supabase.from('photos').select('user_id,url,position').in('user_id', womanIds).order('position'),
-    supabase.from('bumps').select('id,place:places(name)').in('id', bumpIds),
   ]);
 
   const profileMap = new Map(profiles?.map((p) => [p.user_id, p]));
-  const bumpMap = new Map(bumps?.map((b) => [b.id, b]));
   const photoMap = new Map<string, string | undefined>();
   (photos ?? []).forEach((photo) => {
     if (!photoMap.has(photo.user_id) && photo.position === 1) {
@@ -130,7 +126,6 @@ const fetchIncomingLikes = async (userId: string, blockedIds: string[]): Promise
       womanId: like.from_user_id,
       bumpId: like.bump_id ?? '',
       name: profileMap.get(like.from_user_id)?.first_name ?? 'Someone',
-      place: (bumpMap.get(like.bump_id ?? '')?.place as { name?: string } | null)?.name ?? 'a nearby spot',
       createdAtLabel: formatRelativeLabel(like.created_at),
       photo: photoMap.get(like.from_user_id),
     }));
@@ -138,13 +133,13 @@ const fetchIncomingLikes = async (userId: string, blockedIds: string[]): Promise
 
 const WomanBumpCard = ({
   bump,
-  onDecision,
+  onRespond,
   onBlock,
   onReport,
   isProcessing,
 }: {
   bump: WomanBumpCard;
-  onDecision: (action: 'no' | 'yes') => void;
+  onRespond: (action: 'no' | 'yes') => void;
   onBlock: () => void;
   onReport: () => void;
   isProcessing: boolean;
@@ -168,20 +163,20 @@ const WomanBumpCard = ({
       <Text style={styles.context}>
         You bumped near {bump.place} {bump.bumpedAtLabel}.
       </Text>
-      <View style={styles.actions}>
+      <View style={styles.actionsRow}>
         <TouchableOpacity
-          style={[styles.button, styles.noButton]}
-          onPress={() => onDecision('no')}
+          style={[styles.actionIconButton, styles.actionNo]}
+          onPress={() => onRespond('no')}
           disabled={isProcessing}
         >
-          <Text style={[styles.buttonText, styles.noText]}>Pass</Text>
+          <Ionicons name="close" size={26} color="#fff" />
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.button, styles.yesButton]}
-          onPress={() => onDecision('yes')}
+          style={[styles.actionIconButton, styles.actionYes]}
+          onPress={() => onRespond('yes')}
           disabled={isProcessing}
         >
-          <Text style={styles.buttonText}>{isProcessing ? 'Sending…' : 'Send Ping'}</Text>
+          <Ionicons name="checkmark" size={26} color="#fff" />
         </TouchableOpacity>
       </View>
       <View style={styles.safetyRow}>
@@ -220,22 +215,22 @@ const IncomingLikeCardComponent = ({
     <View style={styles.info}>
       <Text style={styles.name}>{like.name}</Text>
       <Text style={styles.context}>
-        Someone you crossed paths with near {like.place} likes you ({like.createdAtLabel}).
+        Someone you crossed paths with likes you ({like.createdAtLabel}).
       </Text>
-      <View style={styles.actions}>
+      <View style={styles.actionsRow}>
         <TouchableOpacity
-          style={[styles.button, styles.noButton]}
+          style={[styles.actionIconButton, styles.actionNo]}
           onPress={() => onRespond('no')}
           disabled={isProcessing}
         >
-          <Text style={[styles.buttonText, styles.noText]}>No thanks</Text>
+          <Ionicons name="close" size={26} color="#fff" />
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.button, styles.yesButton]}
+          style={[styles.actionIconButton, styles.actionYes]}
           onPress={() => onRespond('match')}
           disabled={isProcessing}
         >
-          <Text style={styles.buttonText}>{isProcessing ? 'Matching…' : 'Match'}</Text>
+          <Ionicons name="checkmark" size={26} color="#fff" />
         </TouchableOpacity>
       </View>
       <View style={styles.safetyRow}>
@@ -255,6 +250,12 @@ const BumpsScreen = () => {
   const userId = session?.user.id;
   const isWoman = profile?.gender === 'woman';
   const queryClient = useQueryClient();
+  const { width: screenWidth } = useWindowDimensions();
+  const [womanIndex, setWomanIndex] = useState(0);
+  const [manIndex, setManIndex] = useState(0);
+  const womanTranslateX = useRef(new Animated.Value(0)).current;
+  const manTranslateX = useRef(new Animated.Value(0)).current;
+  const [animating, setAnimating] = useState(false);
 
   const blocksQuery = useQuery({
     queryKey: ['blocks', userId],
@@ -273,6 +274,19 @@ const BumpsScreen = () => {
     queryFn: () => fetchIncomingLikes(userId ?? '', blocksQuery.data ?? []),
     enabled: !!userId && profile?.gender === 'man',
   });
+
+  const womanCards = bumpsQuery.data ?? [];
+  const manCards = likesQuery.data ?? [];
+
+  useEffect(() => {
+    setWomanIndex(0);
+    womanTranslateX.setValue(0);
+  }, [womanCards.length, womanTranslateX]);
+
+  useEffect(() => {
+    setManIndex(0);
+    manTranslateX.setValue(0);
+  }, [manCards.length, manTranslateX]);
 
   const womanDecisionMutation = useMutation({
     mutationFn: async ({ manId, decision, bumpId }: { manId: string; decision: 'no' | 'yes'; bumpId: string }) => {
@@ -357,6 +371,20 @@ const BumpsScreen = () => {
     );
   };
 
+  const animateAndAdvance = (translate: Animated.Value, direction: 'left' | 'right', onDone: () => void) => {
+    const toValue = direction === 'left' ? -screenWidth * 1.1 : screenWidth * 1.1;
+    setAnimating(true);
+    Animated.timing(translate, {
+      toValue,
+      duration: 260,
+      useNativeDriver: true,
+    }).start(() => {
+      translate.setValue(0);
+      setAnimating(false);
+      onDone();
+    });
+  };
+
   const renderWomanFeed = () => {
     if (bumpsQuery.isLoading) {
       return (
@@ -365,29 +393,44 @@ const BumpsScreen = () => {
         </View>
       );
     }
-    if (!bumpsQuery.data?.length) {
+    if (!womanCards.length) {
       return (
         <View style={styles.centered}>
           <Text style={styles.emptyTitle}>No bumps yet</Text>
-          <Text style={styles.emptySubtitle}>Give it 24 hours after you visit public spots.</Text>
+          <Text style={styles.emptySubtitle}>Visit public spots and check back for new bumps.</Text>
+        </View>
+      );
+    }
+    const current = womanCards[womanIndex];
+    if (!current) {
+      return (
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>All caught up</Text>
+          <Text style={styles.emptySubtitle}>Check back later for new bumps.</Text>
         </View>
       );
     }
     return (
-      <FlatList
-        data={bumpsQuery.data}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
+      <View style={styles.stack}>
+        <Animated.View style={{ transform: [{ translateX: womanTranslateX }] }}>
           <WomanBumpCard
-            bump={item}
-            isProcessing={womanDecisionMutation.isPending}
-            onDecision={(decision) => womanDecisionMutation.mutate({ manId: item.manId, decision, bumpId: item.id })}
-            onBlock={() => blockMutation.mutate(item.manId)}
-            onReport={() => handleReport(item.manId)}
+            bump={current}
+            isProcessing={womanDecisionMutation.isPending || animating}
+            onRespond={(decision) => {
+              if (womanDecisionMutation.isPending || animating) return;
+              const direction = decision === 'no' ? 'left' : 'right';
+              animateAndAdvance(womanTranslateX, direction, () => {
+                womanDecisionMutation.mutate(
+                  { manId: current.manId, decision, bumpId: current.id },
+                  { onSuccess: () => setWomanIndex((i) => i + 1) },
+                );
+              });
+            }}
+            onBlock={() => blockMutation.mutate(current.manId)}
+            onReport={() => handleReport(current.manId)}
           />
-        )}
-      />
+        </Animated.View>
+      </View>
     );
   };
 
@@ -399,7 +442,7 @@ const BumpsScreen = () => {
         </View>
       );
     }
-    if (!likesQuery.data?.length) {
+    if (!manCards.length) {
       return (
         <View style={styles.centered}>
           <Text style={styles.emptyTitle}>No likes yet</Text>
@@ -407,28 +450,40 @@ const BumpsScreen = () => {
         </View>
       );
     }
+    const current = manCards[manIndex];
+    if (!current) {
+      return (
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>All caught up</Text>
+          <Text style={styles.emptySubtitle}>Check back later for more.</Text>
+        </View>
+      );
+    }
     return (
-      <FlatList
-        data={likesQuery.data}
-        keyExtractor={(item) => item.likeId}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
+      <View style={styles.stack}>
+        <Animated.View style={{ transform: [{ translateX: manTranslateX }] }}>
           <IncomingLikeCardComponent
-            like={item}
-            isProcessing={likeResponseMutation.isPending}
-            onRespond={(action) =>
-              likeResponseMutation.mutate({
-                likeId: item.likeId,
-                bumpId: item.bumpId,
-                womanId: item.womanId,
-                action,
-              })
-            }
-            onBlock={() => blockMutation.mutate(item.womanId)}
-            onReport={() => handleReport(item.womanId)}
+            like={current}
+            isProcessing={likeResponseMutation.isPending || animating}
+            onRespond={(action) => {
+              const direction = action === 'no' ? 'left' : 'right';
+              animateAndAdvance(manTranslateX, direction, () => {
+                likeResponseMutation.mutate(
+                  {
+                    likeId: current.likeId,
+                    bumpId: current.bumpId,
+                    womanId: current.womanId,
+                    action,
+                  },
+                  { onSuccess: () => setManIndex((i) => i + 1) },
+                );
+              });
+            }}
+            onBlock={() => blockMutation.mutate(current.womanId)}
+            onReport={() => handleReport(current.womanId)}
           />
-        )}
-      />
+        </Animated.View>
+      </View>
     );
   };
 
@@ -448,9 +503,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: spacing.lg,
   },
-  list: {
+  stack: {
+    flex: 1,
+    justifyContent: 'center',
     gap: spacing.lg,
-    paddingBottom: spacing.lg,
   },
   title: {
     fontSize: typography.heading,
@@ -509,29 +565,27 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     color: colors.mutedText,
   },
-  actions: {
+  actionsRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    justifyContent: 'center',
+    gap: spacing.lg,
   },
-  button: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: 14,
+  actionIconButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 6,
   },
-  noButton: {
-    backgroundColor: colors.border,
+  actionNo: {
+    backgroundColor: colors.danger,
   },
-  yesButton: {
-    backgroundColor: colors.primary,
-  },
-  buttonText: {
-    fontSize: typography.body,
-    fontWeight: '600',
-    color: colors.surface,
-  },
-  noText: {
-    color: colors.text,
+  actionYes: {
+    backgroundColor: colors.success,
   },
   centered: {
     flex: 1,

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/ladybuglayer.tsx","./src/components/ladybugsvg.tsx","./src/lib/supabase.ts","./src/pages/homepage.tsx","./src/pages/privacypage.tsx","./src/pages/termspage.tsx"],"version":"5.9.3"}

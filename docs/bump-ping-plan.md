@@ -1,3 +1,6 @@
+npx expo start
+npm run dev
+
 # Bump Ping – MVP Product & Tech Plan
 
 ## 1. Product Overview
@@ -7,7 +10,7 @@
 - **MVP success signals**: (1) ≥80 % of signups complete onboarding, (2) ≥30 % of active women receive ≥1 bump after 24 h, (3) ≥25 % of bumps where she taps “Yes” convert to chats, (4) <5 % weekly reports/blocks per active user.
 
 ## 2. Product Principles & Constraints
-- **Woman-first privacy**: Only women learn where/when bumps happened; men only know “someone you crossed paths with likes you.”
+- **Woman-first privacy**: Only women learn where/when bumps happened pre-match; men only know “someone you crossed paths with likes you.” After a successful match, men can see the matched place context on the match profile.
 - **Straight-only MVP**: Gender radio (woman/man) + implicit straight pairing; revisit inclusivity once loops proven.
 - **Age gating**: Checkbox confirmation (18+) stored as `is_18_plus_confirmed`; no age shown.
 - **Context over precision**: Store visits only for curated public categories; no homes/offices, no precise timelines surfaced in UI.
@@ -21,12 +24,13 @@
 | Admin | Keep community safe, seed places, handle reports | Need lightweight tooling, audit trails |
 
 ## 4. Key Flows
-1. **Auth & onboarding**: Phone → OTP → 5-step onboarding (18+ & gender, first name, photos 1–3, optional bio + interests chips, location explainer → OS permission).
+1. **Auth & onboarding**: Email → OTP → 5-step onboarding (18+ & gender, first name, photos 1–3, optional bio + interests chips, location explainer → OS permission).
 2. **Visit logging**: Device registers geofences for curated places, posts enter/exit to backend, backend writes visits ≥10 min.
-3. **Bump generation**: Hourly job pairs overlapping visits (woman/man, ≥10 min overlap), creates or updates bump (with `repeat_count`), schedules visibility 24 h later.
-4. **Woman bump feed**: Shows eligible bumps once visible, hides any previously “No”-ed men, allows `Yes` → profile → “Send Ping.”
-5. **Man likes feed**: Shows confirmed pings (`is_confirmed=true`), allows `Match` → creates chat or `No`.
-6. **Chat & safety**: Basic messaging with block/report. Blocking removes chat + suppresses future bumps/matches with that user.
+3. **Bump generation**: Hourly job pairs overlapping visits (woman/man, ≥10 min overlap), creates or updates bump (with `repeat_count`). Bumps are eligible for the woman to review immediately once created.
+4. **Woman bump feed**: Shows eligible bumps, hides any previously “No”-ed men. Woman swipes/decides first (`No` or `Yes`).
+5. **Man “available profiles” feed**: A man only sees women available to swipe on **after** a woman has already swiped `Yes` on him (i.e., after her like/ping is confirmed). He can then swipe `Match` (creates match/chat) or `No` (silently dismiss).
+6. **Match reveal (man)**: After a successful match, the man can view the woman’s profile card and see **the place where the match happened** (plus her bio/interests/photos). Pre-match, place context remains hidden for men.
+7. **Chat & safety**: Basic messaging with block/report. Blocking removes chat + suppresses future bumps/matches with that user.
 7. **Admin**: Minimal Supabase dashboard + SQL views (users, bumps, reports) + ability to toggle `status='banned'` on auth user.
 
 ## 5. UX & UI Surfaces (React Native / Expo)
@@ -37,13 +41,14 @@
 | Location explainer | Friendly illustrations/icon, CTA “Okay, continue” → triggers OS background location prompt via Expo Location (Always/Precise). |
 | Tabs (Bumps, Chats, Profile) | Bottom nav via `@react-navigation/bottom-tabs`. |
 | Woman bump card | Photo carousel snap, context text, repeat badge, `No` + `Yes` → full profile sheet with “Send Ping.” |
-| Man likes card | Single photo, anon copy, `No` + `Match`. |
-| Chat | Standard message bubbles, typing box, inline tip (“You crossed paths yesterday—ask about their coffee order”), overflow menu for Block/Report/Delete. |
+| Man likes card | Single photo, anon copy (no place), `No` + `Match`. |
+| Match profile (man) | After a match, shows her bio/interests/photos **plus the place where you matched** (derived from `matches.bump_id → bumps.place_id`). |
+| Chat | Standard message bubbles, typing box, inline tip, overflow menu for Block/Report/Delete. Place context is allowed once matched. |
 | Profile/settings | Edit photos/bio/interests, toggle “Pause bumping,” delete account, view referral code, legal links. |
 
 ## 6. Tech Stack
 - **Client**: React Native (Expo) using React hooks, TypeScript, `expo-location` for background geofencing, `react-query` for cache/sync, `expo-notifications` for push.
-- **Backend**: Supabase (Postgres, Auth via phone OTP, Storage for photos, Edge Functions for secure logic) + optional lightweight Cloud Scheduler (Supabase cron) for bump job.
+- **Backend**: Supabase (Postgres, Auth via email OTP, Storage for photos, Edge Functions for secure logic) + optional lightweight Cloud Scheduler (Supabase cron) for bump job.
 - **APIs**: Mostly Supabase row-level security (RLS) policies + RPC/Edge Functions for visit logging, bump fetching, block/report actions.
 - **Notifications**: Expo push tokens stored per device; Supabase function triggers send when bumps become visible or man receives ping.
 - **Platform choice**: Commit to Expo-native shipping only. A PWA fallback (Progressive Web App running in browsers) is excluded for MVP because background geofencing/push reliability require native capabilities.
@@ -73,7 +78,7 @@ Tables largely follow the provided schema; additions highlighted:
 ## 8. API & Edge Function Sketch
 | Endpoint / Function | Purpose | Notes |
 | --- | --- | --- |
-| `POST /auth/v1/otp` (Supabase) | Phone login | Provided by Supabase |
+| `signInWithOtp` / `verifyOtp` (Supabase) | Email login | Provided by Supabase |
 | `POST /profiles` | Finish onboarding | Validates 18+ checkbox, gender, first name |
 | `POST /photos/upload` | Use Supabase Storage signed upload URLs | Enforce max 3 |
 | `GET /places/nearby?lat&lng` | Return top 15 curated public places | Filter by category whitelist |
@@ -114,8 +119,8 @@ All non-public logic (visit inserts, bump job, match creation) lives in Edge Fun
 4. If overlap ≥10 min:
    - Check existing `bumps` (woman_id + man_id).
    - If exists: increment `repeat_count`, update `place_id`, `overlap_minutes`, and `bumped_at` (use latest midpoint).
-   - Else: insert new bump with `visible_to_woman_at = bumped_at + interval '24 hours'`.
-5. Trigger push notification to woman exactly when `visible_to_woman_at` <= now.
+   - Else: insert new bump (eligible for the woman to review immediately).
+5. Optional: notify woman when new bumps appear; notify man only after a woman swipes `Yes` and the like is confirmed.
 ```
 
 ## 10. Matching & State Machine
@@ -125,7 +130,7 @@ State transitions (simplified):
 3. Woman `Yes` → create like `decision='yes', is_confirmed=false`.
 4. Woman taps “Send Ping” → `is_confirmed=true`, notify man → `status=awaiting_man`.
 5. Man `No` → optional `man_rejected=true`, keep record for analytics; woman is never notified when a ping is declined.
-6. Man `Match` → create `matches` row + initial chat thread → `status=matched`.
+6. Man `Match` → create `matches` row + initial chat thread → `status=matched`. At this point, the man can view a match profile card that includes **the matched place** (via `matches.bump_id`).
 
 Ensure future bumps for same pair respect prior decisions:
 - If woman ever chose `No`, new bumps for same man stay hidden unless product later enables overrides.
@@ -141,6 +146,7 @@ Ensure future bumps for same pair respect prior decisions:
 - Moderation SLA (Service Level Agreement): acknowledge new reports within 24 hours and resolve/close them within 72 hours unless escalated.
 - Privacy commitments:
   - Visits truncated to place & time window; never expose coordinates to other users.
+  - Men do not see place context pre-match; after a successful match, men can see the matched place context (place name/category only, not coordinates or exact timestamps).
   - Data retention policy: delete visit history 60 days after match/chats closed.
   - Provide in-app delete flow (soft delete + background purge).
 
@@ -157,7 +163,7 @@ Ensure future bumps for same pair respect prior decisions:
 ## 13. Build Roadmap (6-week MVP)
 | Week | Focus | Deliverables |
 | --- | --- | --- |
-| 1 | Auth & onboarding | Phone OTP, profile creation, storage uploads, location explainer screen |
+| 1 | Auth & onboarding | Email OTP, profile creation, storage uploads, location explainer screen |
 | 2 | Places & geofencing | Nearby places API, client geofence service, visit logging pipeline |
 | 3 | Bump job & woman feed | Cron job, repeat bump logic, bump card UI, dismissal persistence |
 | 4 | Likes & matches | Woman “Send Ping”, man likes feed, match creation, notifications |

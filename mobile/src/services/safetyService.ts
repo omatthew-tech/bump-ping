@@ -1,12 +1,17 @@
 import { supabase } from '../lib/supabaseClient';
 
 export const blockUser = async (blockerId: string, blockedId: string) => {
-  const { error } = await supabase.from('blocks').upsert({
-    blocker_id: blockerId,
-    blocked_id: blockedId,
+  // Use a privileged Edge Function so the match + messages are removed for BOTH users.
+  const { data, error } = await supabase.functions.invoke('block-user', {
+    body: { blockedId },
   });
+
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (!data?.ok) {
+    throw new Error('Failed to block user');
   }
 };
 

@@ -7,15 +7,17 @@ import { supabase } from '../../lib/supabaseClient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
+import { fetchBlockedUserIds } from '../../services/safetyService';
 
 type MatchRow = {
   id: string;
   name: string;
   place: string;
   createdAtLabel: string;
+  counterpartId: string;
 };
 
-const fetchMatches = async (userId: string): Promise<MatchRow[]> => {
+const fetchMatches = async (userId: string, blockedIds: string[]): Promise<MatchRow[]> => {
   const { data: matches, error } = await supabase
     .from('matches')
     .select('id,user_a_id,user_b_id,bump_id,created_at')
@@ -45,20 +47,24 @@ const fetchMatches = async (userId: string): Promise<MatchRow[]> => {
   const profileMap = new Map(profiles?.map((p) => [p.user_id, p]));
   const bumpMap = new Map((bumps ?? []).map((b) => [b.id, b]));
 
-  return matches.map((match) => ({
-    id: match.id,
-    name: profileMap.get(match.user_a_id === userId ? match.user_b_id : match.user_a_id)?.first_name ?? 'Match',
-    place:
-      (bumpMap.get(match.bump_id ?? '')?.place as { name?: string } | null)?.name ??
-      'your bump spot',
-    createdAtLabel: new Date(match.created_at).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-    }),
-  }));
+  return matches
+    .map((match) => {
+      const counterpartId = match.user_a_id === userId ? match.user_b_id : match.user_a_id;
+      return {
+        id: match.id,
+        counterpartId,
+        name: profileMap.get(counterpartId)?.first_name ?? 'Match',
+        place: ((bumpMap.get(match.bump_id ?? '')?.place as { name?: string } | null)?.name as string | undefined) ?? 'your bump spot',
+        createdAtLabel: new Date(match.created_at).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        }),
+      };
+    })
+    .filter((row) => !blockedIds.includes(row.counterpartId));
 };
 
-const ChatRow = ({ name, place, createdAtLabel, onPress }: MatchRow & { onPress: () => void }) => (
+const ChatRow = ({ name, place, createdAtLabel, onPress }: Omit<MatchRow, 'counterpartId'> & { onPress: () => void }) => (
   <TouchableOpacity style={styles.row} onPress={onPress}>
     <View style={styles.avatar}>
       <Text style={styles.avatarText}>{name[0]}</Text>
@@ -76,10 +82,16 @@ const ChatsScreen = () => {
   const userId = session?.user.id;
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  const matchesQuery = useQuery({
-    queryKey: ['matches', userId],
-    queryFn: () => fetchMatches(userId ?? ''),
+  const blocksQuery = useQuery({
+    queryKey: ['blocks', userId],
+    queryFn: () => fetchBlockedUserIds(userId ?? ''),
     enabled: !!userId,
+  });
+
+  const matchesQuery = useQuery({
+    queryKey: ['matches', userId, blocksQuery.data],
+    queryFn: () => fetchMatches(userId ?? '', blocksQuery.data ?? []),
+    enabled: !!userId && !blocksQuery.isLoading,
   });
 
   return (
