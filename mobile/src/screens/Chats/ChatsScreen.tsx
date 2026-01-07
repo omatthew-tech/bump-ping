@@ -1,4 +1,4 @@
-import { FlatList, StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { FlatList, StyleSheet, Text, View, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { colors, spacing, typography } from '../../theme';
@@ -15,6 +15,7 @@ type MatchRow = {
   place: string;
   createdAtLabel: string;
   counterpartId: string;
+  photoUrl?: string;
 };
 
 const fetchMatches = async (userId: string, blockedIds: string[]): Promise<MatchRow[]> => {
@@ -34,7 +35,7 @@ const fetchMatches = async (userId: string, blockedIds: string[]): Promise<Match
   );
   const bumpIds = matches.map((match) => match.bump_id).filter(Boolean) as string[];
 
-  const [{ data: profiles }, { data: bumps }] = await Promise.all([
+  const [{ data: profiles }, { data: bumps }, { data: photos }] = await Promise.all([
     supabase
       .from('profiles')
       .select('user_id,first_name')
@@ -42,10 +43,23 @@ const fetchMatches = async (userId: string, blockedIds: string[]): Promise<Match
     bumpIds.length
       ? supabase.from('bumps').select('id,place:places(name)').in('id', bumpIds)
       : Promise.resolve({ data: [] }),
+    supabase
+      .from('photos')
+      .select('user_id,url,position')
+      .in('user_id', counterpartIds)
+      .order('position'),
   ]);
 
   const profileMap = new Map(profiles?.map((p) => [p.user_id, p]));
   const bumpMap = new Map((bumps ?? []).map((b) => [b.id, b]));
+  const photoMap = new Map<string, { position: number; url?: string }>();
+  (photos ?? []).forEach((photo) => {
+    const position = typeof photo.position === 'number' ? photo.position : 9999;
+    const existing = photoMap.get(photo.user_id);
+    if (!existing || position < existing.position) {
+      photoMap.set(photo.user_id, { position, url: photo.url });
+    }
+  });
 
   return matches
     .map((match) => {
@@ -53,7 +67,8 @@ const fetchMatches = async (userId: string, blockedIds: string[]): Promise<Match
       return {
         id: match.id,
         counterpartId,
-        name: profileMap.get(counterpartId)?.first_name ?? 'Match',
+        name: profileMap.get(counterpartId)?.first_name ?? 'Someone',
+        photoUrl: photoMap.get(counterpartId)?.url,
         place: ((bumpMap.get(match.bump_id ?? '')?.place as { name?: string } | null)?.name as string | undefined) ?? 'your bump spot',
         createdAtLabel: new Date(match.created_at).toLocaleDateString(undefined, {
           month: 'short',
@@ -64,10 +79,14 @@ const fetchMatches = async (userId: string, blockedIds: string[]): Promise<Match
     .filter((row) => !blockedIds.includes(row.counterpartId));
 };
 
-const ChatRow = ({ name, place, createdAtLabel, onPress }: Omit<MatchRow, 'counterpartId'> & { onPress: () => void }) => (
+const ChatRow = ({ name, place, createdAtLabel, photoUrl, onPress }: Omit<MatchRow, 'counterpartId'> & { onPress: () => void }) => (
   <TouchableOpacity style={styles.row} onPress={onPress}>
     <View style={styles.avatar}>
-      <Text style={styles.avatarText}>{name[0]}</Text>
+      {photoUrl ? (
+        <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+      ) : (
+        <Text style={styles.avatarText}>{name[0]}</Text>
+      )}
     </View>
     <View style={styles.meta}>
       <Text style={styles.name}>{name}</Text>
@@ -159,6 +178,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
   },
   avatarText: {
     color: colors.surface,

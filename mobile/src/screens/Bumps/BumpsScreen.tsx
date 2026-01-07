@@ -49,13 +49,30 @@ const fetchWomanBumps = async (userId: string, blockedIds: string[]): Promise<Wo
   if (!bumps?.length) return [];
 
   const manIds = Array.from(new Set(bumps.map((b) => b.man_id)));
+
+  // Filter out anyone we've already matched with.
+  const { data: existingMatches } = await supabase
+    .from('matches')
+    .select('user_a_id,user_b_id')
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+  const matchedIds = new Set<string>();
+  (existingMatches ?? []).forEach((m) => {
+    const other = m.user_a_id === userId ? m.user_b_id : m.user_a_id;
+    if (other) matchedIds.add(other);
+  });
+
   const { data: likes } = await supabase
     .from('likes')
     .select('to_user_id')
     .eq('from_user_id', userId);
 
   const dismissed = new Set((likes ?? []).map((l) => l.to_user_id));
-  const filtered = bumps.filter((b) => !dismissed.has(b.man_id) && !blockedIds.includes(b.man_id));
+  const filtered = bumps.filter(
+    (b) =>
+      !dismissed.has(b.man_id) &&
+      !blockedIds.includes(b.man_id) &&
+      !matchedIds.has(b.man_id),
+  );
   if (!filtered.length) return [];
 
   const { data: profiles, error: profileError } = await supabase
@@ -72,10 +89,13 @@ const fetchWomanBumps = async (userId: string, blockedIds: string[]): Promise<Wo
     .order('position');
 
   const profileMap = new Map(profiles?.map((p) => [p.user_id, p]));
-  const photoMap = new Map<string, string | undefined>();
+  // Pick ONLY the first photo per user (lowest `position`).
+  const photoMap = new Map<string, { position: number; url?: string }>();
   (photos ?? []).forEach((photo) => {
-    if (!photoMap.has(photo.user_id) && photo.position === 1) {
-      photoMap.set(photo.user_id, photo.url);
+    const position = typeof photo.position === 'number' ? photo.position : 9999;
+    const existing = photoMap.get(photo.user_id);
+    if (!existing || position < existing.position) {
+      photoMap.set(photo.user_id, { position, url: photo.url });
     }
   });
 
@@ -86,7 +106,7 @@ const fetchWomanBumps = async (userId: string, blockedIds: string[]): Promise<Wo
     place: (bump.place as { name?: string } | null)?.name ?? 'somewhere nearby',
     bumpedAtLabel: formatRelativeLabel(bump.bumped_at),
     repeatCount: bump.repeat_count ?? 1,
-    photo: photoMap.get(bump.man_id),
+    photo: photoMap.get(bump.man_id)?.url,
   }));
 };
 
@@ -106,6 +126,17 @@ const fetchIncomingLikes = async (userId: string, blockedIds: string[]): Promise
 
   const womanIds = Array.from(new Set(likes.map((l) => l.from_user_id)));
 
+  // If we already matched with someone, never show them again in the bumps feed.
+  const { data: matches } = await supabase
+    .from('matches')
+    .select('user_a_id,user_b_id')
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+  const matchedIds = new Set<string>();
+  (matches ?? []).forEach((m) => {
+    const other = m.user_a_id === userId ? m.user_b_id : m.user_a_id;
+    if (other) matchedIds.add(other);
+  });
+
   const [{ data: profiles }, { data: photos }] = await Promise.all([
     supabase.from('profiles').select('user_id,first_name').in('user_id', womanIds),
     supabase.from('photos').select('user_id,url,position').in('user_id', womanIds).order('position'),
@@ -120,7 +151,7 @@ const fetchIncomingLikes = async (userId: string, blockedIds: string[]): Promise
   });
 
   return likes
-    .filter((like) => !blockedIds.includes(like.from_user_id))
+    .filter((like) => !blockedIds.includes(like.from_user_id) && !matchedIds.has(like.from_user_id))
     .map((like) => ({
       likeId: like.id,
       womanId: like.from_user_id,
@@ -597,6 +628,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: spacing.md,
+    marginTop: spacing.md,
   },
   safetyText: {
     color: colors.mutedText,

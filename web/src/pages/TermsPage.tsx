@@ -33,7 +33,7 @@ export default function TermsPage() {
 
         <h2>Contact</h2>
         <p>
-          Questions? Email us at <a href="mailto:support@bumpping.app">support@bumpping.app</a>.
+          Questions? Email us at <a href="mailto:support@bump-ping.com">support@bump-ping.com</a>.
         </p>
       </div>
     </div>
